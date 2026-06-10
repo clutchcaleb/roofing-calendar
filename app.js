@@ -1,6 +1,7 @@
 const SUPABASE_URL = "https://tsoltsgajvvvgejvlfdz.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzb2x0c2dhanZ2dmdlanZsZmR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTU4NTMsImV4cCI6MjA5NjYzMTg1M30.nmNWNKG7Vo8BWahDDk69Bf_wddZmuXPfqMdqkOdt4DA";
 const PUBLIC_SITE_URL = "https://clutchcaleb.github.io/roofing-calendar/";
+const EMAIL_CONFIRMATION_MESSAGE = "Turn off email confirmations in Supabase Auth so new accounts can log in immediately.";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const eventTypes = {
@@ -918,7 +919,7 @@ async function login() {
     password: password.value,
   });
   if (error) {
-    toast(error.message);
+    toast(error.message === "Invalid login credentials" ? `Invalid login. ${EMAIL_CONFIRMATION_MESSAGE}` : error.message);
     return;
   }
   state.pendingToast = "Logged in.";
@@ -952,7 +953,7 @@ async function createUser() {
     toast("Email fields must match.");
     return;
   }
-  const { error } = await db.auth.signUp({
+  const { data: signup, error } = await db.auth.signUp({
     email,
     password,
     options: {
@@ -964,6 +965,10 @@ async function createUser() {
   });
   if (error) {
     toast(error.message);
+    return;
+  }
+  if (!signup.session) {
+    toast(EMAIL_CONFIRMATION_MESSAGE);
     return;
   }
   await db.auth.signOut();
