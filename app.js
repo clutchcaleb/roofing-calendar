@@ -1,5 +1,6 @@
 const SUPABASE_URL = "https://tsoltsgajvvvgejvlfdz.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzb2x0c2dhanZ2dmdlanZsZmR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTU4NTMsImV4cCI6MjA5NjYzMTg1M30.nmNWNKG7Vo8BWahDDk69Bf_wddZmuXPfqMdqkOdt4DA";
+const PUBLIC_SITE_URL = "https://clutchcaleb.github.io/roofing-calendar/";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const eventTypes = {
@@ -1298,7 +1299,7 @@ function toast(message) {
 }
 
 function cleanRedirectUrl() {
-  return window.location.href.split("#")[0];
+  return PUBLIC_SITE_URL;
 }
 
 db.auth.onAuthStateChange(async (_event, session) => {
