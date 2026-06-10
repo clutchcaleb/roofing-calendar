@@ -251,11 +251,36 @@ button {
   gap: 2px;
   text-align: left;
   min-height: 34px;
+  position: relative;
 }
 
 .time-cell .event-chip {
   min-height: calc(var(--event-duration) * var(--hour-height));
   align-content: start;
+  padding-right: 28px;
+}
+
+.chip-status {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.chip-status.good {
+  background: #188038;
+}
+
+.chip-status.bad {
+  background: var(--red);
 }
 
 .event-row {

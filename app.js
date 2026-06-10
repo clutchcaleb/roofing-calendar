@@ -493,10 +493,20 @@ function eventChipHtml(event, timed = false) {
   const style = timed ? ` style="--event-duration: ${eventDurationHours(event)};"` : "";
   return `
     <button class="event-chip ${event.type}" data-action="preview" data-id="${event.id}"${style}>
+      ${timed ? chipStatusHtml(event) : ""}
       <span class="chip-title">${escapeHtml(eventTitle(event))}</span>
       <span class="chip-time">${formatTime(eventStart(event))} - ${formatTime(eventEnd(event))}</span>
     </button>
   `;
+}
+
+function chipStatusHtml(event) {
+  const results = eventResults(event);
+  if (!results.length) return "";
+  const isNoShow = results.some((result) => result.toLowerCase().includes("no show"));
+  const hasOtherResult = results.some((result) => !result.toLowerCase().includes("no show"));
+  if (!isNoShow && !hasOtherResult) return "";
+  return `<span class="chip-status ${isNoShow ? "bad" : "good"}">${isNoShow ? "×" : "✓"}</span>`;
 }
 
 function reportsPageHtml() {
@@ -1164,7 +1174,7 @@ function handleFormInput(event) {
   }
 
   if (target.type === "checkbox") {
-    const values = [...document.querySelectorAll(`input[name="${target.name}"]:checked`)].map((item) => item.value);
+    const values = exclusiveNoShowValues(target);
     eventModel[target.name] = values;
   } else if (target.name) {
     eventModel[target.name] = target.value;
@@ -1180,6 +1190,21 @@ function handleFormInput(event) {
   if (eventModel.type === "followup" && target.name === "followupResults") maybeUpdateInspection(eventModel);
   saveEvents();
   renderHeaderOnly();
+}
+
+function exclusiveNoShowValues(target) {
+  const checked = [...document.querySelectorAll(`input[name="${target.name}"]:checked`)];
+  if (target.value === "no show" && target.checked) {
+    checked.forEach((item) => {
+      if (item !== target) item.checked = false;
+    });
+    return ["no show"];
+  }
+  if (target.value !== "no show" && target.checked) {
+    const noShow = checked.find((item) => item.value === "no show");
+    if (noShow) noShow.checked = false;
+  }
+  return [...document.querySelectorAll(`input[name="${target.name}"]:checked`)].map((item) => item.value);
 }
 
 function renderHeaderOnly() {
