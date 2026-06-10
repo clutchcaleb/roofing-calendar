@@ -2,6 +2,7 @@ const SUPABASE_URL = "https://tsoltsgajvvvgejvlfdz.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzb2x0c2dhanZ2dmdlanZsZmR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTU4NTMsImV4cCI6MjA5NjYzMTg1M30.nmNWNKG7Vo8BWahDDk69Bf_wddZmuXPfqMdqkOdt4DA";
 const PUBLIC_SITE_URL = "https://clutchcaleb.github.io/roofing-calendar/";
 const EMAIL_CONFIRMATION_MESSAGE = "Account not found or password is incorrect.";
+const APP_SESSION_KEY = "roots_calendar_app_user_id";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const eventTypes = {
@@ -78,14 +79,12 @@ function migrateUserValues(values) {
 }
 
 async function loadAppData() {
-  const { data: sessionData } = await db.auth.getSession();
-  state.currentUserId = sessionData.session?.user?.id || "";
+  state.currentUserId = localStorage.getItem(APP_SESSION_KEY) || "";
   if (!state.currentUserId) {
     state.loading = false;
     render();
     return;
   }
-  await ensureProfile(sessionData.session.user);
   const [{ data: profiles, error: profileError }, { data: events, error: eventError }] = await Promise.all([
     db.from("profiles").select("id, first_name, last_name, phone, email").order("first_name"),
     db.from("calendar_events").select("id, payload").order("date"),
@@ -924,11 +923,6 @@ async function login() {
   if (!input?.reportValidity() || !password?.reportValidity()) return;
   const email = input.value.trim().toLowerCase();
   const passwordHash = await hashPassword(email, password.value);
-  const { error } = await db.auth.signInAnonymously();
-  if (error) {
-    toast(error.message);
-    return;
-  }
   const { data: profile, error: profileError } = await db
     .from("profiles")
     .select("id")
@@ -936,16 +930,17 @@ async function login() {
     .eq("password_hash", passwordHash)
     .maybeSingle();
   if (profileError || !profile) {
-    await db.auth.signOut();
     toast(EMAIL_CONFIRMATION_MESSAGE);
     return;
   }
+  localStorage.setItem(APP_SESSION_KEY, profile.id);
+  state.currentUserId = profile.id;
   state.pendingToast = "Logged in.";
   await loadAppData();
 }
 
 async function logout() {
-  await db.auth.signOut();
+  localStorage.removeItem(APP_SESSION_KEY);
   state.currentUserId = "";
   state.events = [];
   state.users = [];
@@ -973,15 +968,17 @@ async function createUser() {
     return;
   }
   const passwordHash = await hashPassword(email, password);
-  const { data: sessionData, error } = await db.auth.signInAnonymously({
-    options: { data: { phone, email } },
-  });
-  if (error) {
-    toast(error.message);
+  const { data: existing, error: existingError } = await db.from("profiles").select("id").eq("email", email).maybeSingle();
+  if (existingError) {
+    toast(existingError.message);
+    return;
+  }
+  if (existing) {
+    toast("An account with this email already exists.");
     return;
   }
   const profile = {
-    id: sessionData.user.id,
+    id: crypto.randomUUID(),
     first_name: "",
     last_name: "",
     phone,
@@ -993,7 +990,6 @@ async function createUser() {
     toast(profileError.message);
     return;
   }
-  await db.auth.signOut();
   state.currentUserId = "";
   state.events = [];
   state.users = [];
@@ -1406,20 +1402,6 @@ function toast(message) {
     element.classList.remove("show");
   }, 2600);
 }
-
-function cleanRedirectUrl() {
-  return PUBLIC_SITE_URL;
-}
-
-db.auth.onAuthStateChange(async (_event, session) => {
-  if (state.loading) return;
-  state.currentUserId = session?.user?.id || "";
-  state.loading = true;
-  state.events = [];
-  state.users = [];
-  render();
-  await loadAppData();
-});
 
 function escapeHtml(value = "") {
   return String(value)
