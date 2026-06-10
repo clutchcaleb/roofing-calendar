@@ -4,8 +4,13 @@ create table if not exists public.profiles (
   last_name text not null default '',
   phone text not null default '',
   email text not null default '',
+  role text not null default 'rep',
   created_at timestamptz not null default now()
 );
+
+
+alter table public.profiles
+add column if not exists role text not null default 'rep';
 
 create table if not exists public.calendar_events (
   id text primary key,
@@ -43,6 +48,12 @@ on public.profiles for update
 to anon, authenticated
 using (true)
 with check (true);
+
+drop policy if exists "Authenticated users can delete profiles" on public.profiles;
+create policy "Authenticated users can delete profiles"
+on public.profiles for delete
+to anon, authenticated
+using (true);
 
 drop policy if exists "Authenticated users can read events" on public.calendar_events;
 create policy "Authenticated users can read events"

@@ -36,6 +36,7 @@ const state = {
   draftEventIds: [],
   users: [],
   currentUserId: "",
+  currentUserRole: "rep",
   events: [],
   loading: true,
   reportUserIds: [],
@@ -92,13 +93,15 @@ async function loadAppData() {
     return;
   }
   const [{ data: profiles, error: profileError }, { data: events, error: eventError }] = await Promise.all([
-    db.from("profiles").select("id, first_name, last_name, phone, email").order("email"),
+    db.from("profiles").select("id, first_name, last_name, phone, email, role").order("email"),
     db.from("calendar_events").select("id, payload").order("date"),
   ]);
   if (profileError || eventError) {
     state.pendingToast = "Run supabase-schema.sql in Supabase, then reload.";
   }
   state.users = (profiles || []).map(profileFromRow);
+  const currentUser = state.users.find((user) => user.id === state.currentUserId);
+  state.currentUserRole = currentUser?.role || "rep";
   state.events = (events || []).map((row) => migrateEvent(row.payload || { id: row.id }));
   state.reportUserIds = state.users.map((user) => user.id);
   state.loading = false;
@@ -114,6 +117,7 @@ async function ensureProfile(user) {
     last_name: meta.lastName || meta.last_name || "",
     phone: meta.phone || "",
     email: user.email || meta.email || "",
+    role: meta.role || "rep",
   };
   await db.from("profiles").upsert(profile, { onConflict: "id", ignoreDuplicates: true });
 }
@@ -125,7 +129,16 @@ function profileFromRow(row) {
     lastName: row.last_name || "",
     phone: row.phone || "",
     email: row.email || "",
+    role: row.role || "rep",
   };
+}
+
+function currentUser() {
+  return state.users.find((user) => user.id === state.currentUserId) || null;
+}
+
+function isAdmin() {
+  return currentUser()?.role === "admin" || state.currentUserRole === "admin";
 }
 
 function eventRow(event) {
@@ -337,12 +350,14 @@ function appHtml() {
         <nav class="tabs">
           <button class="tab ${state.page === "calendar" ? "active" : ""}" data-action="page" data-page="calendar" data-short="C">Calendar</button>
           <button class="tab ${state.page === "reports" ? "active" : ""}" data-action="page" data-page="reports" data-short="D">Data</button>
+          ${isAdmin() ? `<button class="tab ${state.page === "admin" ? "active" : ""}" data-action="page" data-page="admin" data-short="A">Admin</button>` : ""}
         </nav>
         ${state.page === "calendar" ? calendarToolbarHtml() : ""}
         <div class="toolbar-spacer"></div>
-        ${state.page === "reports" ? `<button class="secondary-btn" data-action="show-create-user">Create New User</button><button class="secondary-btn" data-action="logout">Logout</button>` : ""}
+        ${state.page === "reports" && isAdmin() ? `<button class="secondary-btn" data-action="page" data-page="admin">Admin</button>` : ""}
+        ${(state.page === "reports" || state.page === "admin") ? `<button class="secondary-btn" data-action="logout">Logout</button>` : ""}
       </header>
-      ${state.page === "calendar" ? calendarPageHtml() : reportsPageHtml()}
+      ${state.page === "calendar" ? calendarPageHtml() : state.page === "admin" ? adminPageHtml() : reportsPageHtml()}
       ${state.page === "calendar" ? `<button class="fab" title="Create event" data-action="create" data-date="${toDateInputValue(new Date())}">+</button>` : ""}
       ${state.page === "calendar" && state.viewMode !== "month" ? `<button class="height-fab" title="Adjust hour height" data-action="hour-height">↕</button>` : ""}
     </main>
@@ -586,6 +601,57 @@ function reportDetailHtml(user) {
           <span>Setter: ${escapeHtml(userNames(event.setter) || "None")} · Salesman: ${escapeHtml(userNames(event.salesman) || "None")}</span>
         </button>
       `).join("") || `<span>No calendar events for this user.</span>`}
+    </div>
+  `;
+}
+
+function adminPageHtml() {
+  if (!isAdmin()) {
+    return `<section class="admin-page"><div class="admin-card"><h1>Admin</h1><p class="empty-note">You do not have permission to manage users.</p></div></section>`;
+  }
+
+  const users = [...state.users].sort((a, b) => userName(a).localeCompare(userName(b)));
+
+  return `
+    <section class="admin-page">
+      <div class="admin-card">
+        <div class="admin-head">
+          <div>
+            <h1>Admin</h1>
+            <p>Manage user permissions and delete users.</p>
+          </div>
+          <button class="primary-btn" data-action="show-create-user">Create New User</button>
+        </div>
+        <div class="admin-table">
+          <div class="admin-row admin-row-head">
+            <span>User</span>
+            <span>Email</span>
+            <span>Permission</span>
+            <span>Actions</span>
+          </div>
+          ${users.map(adminUserRowHtml).join("") || `<div class="empty-note">No users found.</div>`}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function adminUserRowHtml(user) {
+  const isSelf = user.id === state.currentUserId;
+  const assignmentCount = state.events.filter((event) => event.setter.includes(user.id) || event.salesman.includes(user.id)).length;
+  return `
+    <div class="admin-row">
+      <span>
+        <strong>${escapeHtml(userName(user))}</strong>
+        ${isSelf ? `<em>You</em>` : ""}
+      </span>
+      <span>${escapeHtml(user.email || "No email")}</span>
+      <span class="role-badge ${user.role === "admin" ? "admin" : "rep"}">${user.role === "admin" ? "Admin" : "Rep"}</span>
+      <span class="admin-actions">
+        <button class="secondary-btn" data-action="make-admin" data-id="${user.id}" ${user.role === "admin" ? "disabled" : ""}>Make Admin</button>
+        <button class="secondary-btn" data-action="make-rep" data-id="${user.id}" ${user.role === "rep" || isSelf ? "disabled" : ""}>Make Rep</button>
+        <button class="secondary-btn danger-btn" data-action="delete-user" data-id="${user.id}" data-count="${assignmentCount}" ${isSelf ? "disabled" : ""}>Delete</button>
+      </span>
     </div>
   `;
 }
@@ -944,6 +1010,9 @@ function handleAction(event) {
   if (action === "toggle-user-group") return toggleUserGroup(event.currentTarget.dataset.group);
   if (action === "toggle-report-detail") return toggleReportDetail(event.currentTarget.dataset.id);
   if (action === "download-report") return downloadReport();
+  if (action === "make-admin") return updateUserRole(event.currentTarget.dataset.id, "admin");
+  if (action === "make-rep") return updateUserRole(event.currentTarget.dataset.id, "rep");
+  if (action === "delete-user") return deleteUser(event.currentTarget.dataset.id);
   if (action === "set-time-slot") return setTimeSlot(event);
 }
 
@@ -955,7 +1024,7 @@ async function login() {
   const passwordHash = await hashPassword(email, password.value);
   const { data: profile, error: profileError } = await db
     .from("profiles")
-    .select("id, first_name")
+    .select("id, first_name, role")
     .eq("email", email)
     .maybeSingle();
   if (profileError || !profile || profile.first_name !== passwordStorageValue(passwordHash)) {
@@ -964,6 +1033,7 @@ async function login() {
   }
   localStorage.setItem(APP_SESSION_KEY, profile.id);
   state.currentUserId = profile.id;
+  state.currentUserRole = profile.role || "rep";
   state.pendingToast = "Logged in.";
   await loadAppData();
 }
@@ -971,6 +1041,7 @@ async function login() {
 async function logout() {
   localStorage.removeItem(APP_SESSION_KEY);
   state.currentUserId = "";
+  state.currentUserRole = "rep";
   state.events = [];
   state.users = [];
   render();
@@ -1012,13 +1083,26 @@ async function createUser() {
     last_name: "",
     phone,
     email,
+    role: "rep",
   };
   const { error: profileError } = await db.from("profiles").upsert(profile, { onConflict: "id" });
   if (profileError) {
     toast(profileError.message);
     return;
   }
+  if (state.currentUserId) {
+    const newUser = profileFromRow(profile);
+    state.users.push(newUser);
+    state.reportUserIds.push(newUser.id);
+    closeCreateUser();
+    form.reset();
+    state.pendingToast = "User created.";
+    render();
+    return;
+  }
+
   state.currentUserId = "";
+  state.currentUserRole = "rep";
   state.events = [];
   state.users = [];
   closeCreateUser();
@@ -1037,6 +1121,10 @@ function passwordStorageValue(hash) {
 }
 
 function setPage(page) {
+  if (page === "admin" && !isAdmin()) {
+    toast("Admin permission required.");
+    return;
+  }
   state.page = page;
   state.selectedEventId = null;
   state.previewEventId = null;
@@ -1343,6 +1431,78 @@ async function lookupAddresses(query, limit) {
   return (data.result?.addressMatches || []).slice(0, limit).map((match) => ({
     display_name: match.matchedAddress,
   }));
+}
+
+async function updateUserRole(id, role) {
+  if (!isAdmin()) {
+    toast("Admin permission required.");
+    return;
+  }
+
+  const user = state.users.find((item) => item.id === id);
+  if (!user) return;
+
+  if (id === state.currentUserId && role !== "admin") {
+    toast("You cannot remove your own admin permission.");
+    return;
+  }
+
+  const { error } = await db.from("profiles").update({ role }).eq("id", id);
+  if (error) {
+    toast("User permission could not be updated.");
+    return;
+  }
+
+  user.role = role;
+  if (id === state.currentUserId) state.currentUserRole = role;
+  state.pendingToast = `${userName(user)} is now ${role === "admin" ? "an admin" : "a rep"}.`;
+  render();
+}
+
+async function deleteUser(id) {
+  if (!isAdmin()) {
+    toast("Admin permission required.");
+    return;
+  }
+
+  const user = state.users.find((item) => item.id === id);
+  if (!user) return;
+
+  if (id === state.currentUserId) {
+    toast("You cannot delete your own account.");
+    return;
+  }
+
+  const assignedEvents = state.events.filter((event) => event.setter.includes(id) || event.salesman.includes(id));
+  const confirmed = window.confirm(`Delete ${userName(user)}? This also removes them from ${assignedEvents.length} assigned event(s).`);
+  if (!confirmed) return;
+
+  const changedEvents = assignedEvents.map((event) => ({
+    ...event,
+    setter: event.setter.filter((userId) => userId !== id),
+    salesman: event.salesman.filter((userId) => userId !== id),
+  }));
+
+  if (changedEvents.length) {
+    const { error: eventError } = await db.from("calendar_events").upsert(changedEvents.map(eventRow), { onConflict: "id" });
+    if (eventError) {
+      toast("User assignments could not be updated.");
+      return;
+    }
+    const changedById = new Map(changedEvents.map((event) => [event.id, event]));
+    state.events = state.events.map((event) => changedById.get(event.id) || event);
+  }
+
+  const { error } = await db.from("profiles").delete().eq("id", id);
+  if (error) {
+    toast("User could not be deleted.");
+    return;
+  }
+
+  state.users = state.users.filter((item) => item.id !== id);
+  state.reportUserIds = state.reportUserIds.filter((userId) => userId !== id);
+  state.pendingToast = "User deleted.";
+  render();
 }
 
 function handleReportUserChange() {
