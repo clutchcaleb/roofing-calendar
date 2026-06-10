@@ -33,6 +33,7 @@ const state = {
   draftDate: toDateInputValue(new Date()),
   addressSuggestions: [],
   userGroupOpen: {},
+  draftEventIds: [],
   users: [],
   currentUserId: "",
   events: [],
@@ -139,7 +140,7 @@ function eventRow(event) {
 
 async function saveEvents() {
   if (!state.currentUserId) return;
-  const rows = state.events.map(eventRow);
+  const rows = state.events.filter((event) => !state.draftEventIds.includes(event.id)).map(eventRow);
   if (!rows.length) return;
   const { error } = await db.from("calendar_events").upsert(rows, { onConflict: "id" });
   if (error) toast("Event could not sync.");
@@ -591,7 +592,6 @@ function drawerHtml() {
           <button class="icon-btn" title="Close" data-action="close">×</button>
           <button class="icon-btn" title="Shrink" data-action="toggle-drawer-size">${state.drawerCollapsed ? "▴" : "▾"}</button>
           <div class="drawer-title">${escapeHtml(eventTitle(event))}</div>
-          <button class="primary-btn" data-action="save">Save</button>
         </header>
         <form class="form" id="eventForm">
           <div class="form-grid">
@@ -784,11 +784,11 @@ function userGroup(label, name, selected) {
   const isOpen = Boolean(state.userGroupOpen[name]);
   const selectedCount = selected.length;
   return `
-    <div class="field full">
+    <div class="field full" data-user-group="${name}">
       <button type="button" class="collapse-btn" data-action="toggle-user-group" data-group="${name}" aria-expanded="${isOpen}">
         <span>${escapeHtml(label)}</span>
         <strong>${selectedCount}</strong>
-        <span>${isOpen ? "Collapse" : "Expand"}</span>
+        <span data-collapse-text>${isOpen ? "Collapse" : "Expand"}</span>
       </button>
       <div class="segment collapsible ${isOpen ? "open" : ""}">
         ${state.users.map((user) => `
@@ -1111,7 +1111,14 @@ function setTimeSlot(event) {
 
 function toggleUserGroup(group) {
   state.userGroupOpen[group] = !state.userGroupOpen[group];
-  render();
+  const section = document.querySelector(`[data-user-group="${group}"]`);
+  const button = section?.querySelector(".collapse-btn");
+  const list = section?.querySelector(".collapsible");
+  const text = button?.querySelector("[data-collapse-text]");
+  const isOpen = Boolean(state.userGroupOpen[group]);
+  if (button) button.setAttribute("aria-expanded", String(isOpen));
+  if (list) list.classList.toggle("open", isOpen);
+  if (text) text.textContent = isOpen ? "Collapse" : "Expand";
 }
 
 function currentEvent() {
@@ -1171,6 +1178,8 @@ function validateCurrentEvent() {
 function saveCurrentEvent() {
   const event = validateCurrentEvent();
   if (!event) return;
+  state.draftEventIds = state.draftEventIds.filter((id) => id !== event.id);
+  saveEvents();
   state.selectedEventId = null;
   state.pendingToast = "Event saved.";
   render();
@@ -1193,9 +1202,9 @@ function spawnEvent(type) {
     parentInspectionId: source.type === "inspection" ? source.id : source.parentInspectionId,
   });
   state.events.push(child);
+  state.draftEventIds.push(child.id);
   state.selectedEventId = child.id;
-  saveEvents();
-  state.pendingToast = `${eventTypes[type].label} created.`;
+  state.pendingToast = `${eventTypes[type].label} ready to review.`;
   render();
 }
 
@@ -1324,7 +1333,7 @@ function eventInReportRange(event) {
 }
 
 function reportEvents() {
-  return state.events.filter(eventInReportRange);
+  return state.events.filter((event) => !state.draftEventIds.includes(event.id)).filter(eventInReportRange);
 }
 
 function toggleReportDetail(userId) {
