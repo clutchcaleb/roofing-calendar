@@ -190,6 +190,11 @@ button {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  cursor: pointer;
+}
+
+.day:hover {
+  background: #f8fafc;
 }
 
 .day:nth-child(7n) {

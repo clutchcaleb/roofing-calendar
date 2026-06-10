@@ -61,6 +61,10 @@ function userName(user) {
   return [firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email || "User";
 }
 
+function userNames(ids) {
+  return ids.map((id) => userName(state.users.find((user) => user.id === id) || { email: id })).join(", ");
+}
+
 function migrateEvent(event) {
   const startTime = event.startTime || event.time || "09:00";
   return {
@@ -391,7 +395,7 @@ function monthViewHtml() {
     const isOutside = date.getMonth() !== state.viewDate.getMonth();
     const dayEvents = eventsForDate(dateKey);
     cells.push(`
-      <div class="day ${isOutside ? "outside" : ""} ${dateKey === today ? "today" : ""}">
+      <div class="day ${isOutside ? "outside" : ""} ${dateKey === today ? "today" : ""}" data-action="open-day" data-date="${dateKey}">
         <div class="day-head">
           <span class="day-number">${date.getDate()}</span>
           <button class="add-mini" title="Create event" data-action="create" data-date="${dateKey}">+</button>
@@ -532,11 +536,7 @@ function reportsPageHtml() {
 
 function reportCardHtml(user) {
   const rangeEvents = reportEvents();
-  const inspectionsSet = rangeEvents.filter((event) =>
-    event.type === "inspection" &&
-    event.setter.includes(user.id) &&
-    !event.inspectionResults.includes("no show")
-  );
+  const inspectionsSet = rangeEvents.filter((event) => isSetterInspectionForUser(event, user.id));
   const nextWeekEnd = addDays(new Date(), 7);
   const nextWeek = inspectionsSet.filter((event) => {
     const date = fromDateKey(event.date);
@@ -573,6 +573,7 @@ function reportDetailHtml(user) {
         <button data-action="preview" data-id="${event.id}">
           <strong>${escapeHtml(eventTitle(event))}</strong>
           <span>${event.date} · ${formatTime(eventStart(event))} - ${formatTime(eventEnd(event))} · ${escapeHtml(resultText(event) || "no result")}</span>
+          <span>Setter: ${escapeHtml(userNames(event.setter) || "None")} · Salesman: ${escapeHtml(userNames(event.salesman) || "None")}</span>
         </button>
       `).join("") || `<span>No calendar events for this user.</span>`}
     </div>
@@ -899,6 +900,7 @@ function handleAction(event) {
   if (action === "today") return goToday();
   if (action === "prev" || action === "next") return moveDate(action);
   if (action === "create") return openEvent(emptyEvent("inspection", event.currentTarget.dataset.date));
+  if (action === "open-day") return openDay(event);
   if (action === "preview") return previewEvent(event.currentTarget.dataset.id);
   if (action === "edit") return editEvent(event.currentTarget.dataset.id);
   if (action === "close-preview") return closePreview();
@@ -1019,6 +1021,13 @@ function setViewMode(mode) {
   state.viewMode = mode;
   if (mode === "month") state.viewDate = startOfMonth(state.viewDate);
   if (previousMode === "month" && mode !== "month") state.viewDate = new Date();
+  render();
+}
+
+function openDay(event) {
+  if (event.target.closest(".add-mini")) return;
+  state.viewDate = fromDateKey(event.currentTarget.dataset.date);
+  state.viewMode = "day";
   render();
 }
 
@@ -1336,6 +1345,10 @@ function reportEvents() {
   return state.events.filter((event) => !state.draftEventIds.includes(event.id)).filter(eventInReportRange);
 }
 
+function isSetterInspectionForUser(event, userId) {
+  return event.type === "inspection" && event.setter.includes(userId) && !event.inspectionResults.includes("no show");
+}
+
 function toggleReportDetail(userId) {
   if (state.expandedReportUserIds.includes(userId)) {
     state.expandedReportUserIds = state.expandedReportUserIds.filter((id) => id !== userId);
@@ -1353,7 +1366,7 @@ function downloadReport() {
   ];
   const filteredEvents = reportEvents();
   state.users.filter((user) => state.reportUserIds.includes(user.id)).forEach((user) => {
-    const inspectionsSet = filteredEvents.filter((event) => event.type === "inspection" && event.setter.includes(user.id) && !event.inspectionResults.includes("no show"));
+    const inspectionsSet = filteredEvents.filter((event) => isSetterInspectionForUser(event, user.id));
     const nextWeekEnd = addDays(new Date(), 7);
     const nextWeek = inspectionsSet.filter((event) => {
       const date = fromDateKey(event.date);
@@ -1369,7 +1382,7 @@ function downloadReport() {
     ]);
   });
   rows.push([]);
-  rows.push(["User", "Appointment Date", "Start", "End", "Appointment Type", "Customer", "Results", "Address", "Notes"]);
+  rows.push(["User", "Appointment Date", "Start", "End", "Appointment Type", "Customer", "Setter", "Salesman", "Results", "Address", "Notes"]);
   state.users.filter((user) => state.reportUserIds.includes(user.id)).forEach((user) => {
     filteredEvents
       .filter((event) => event.setter.includes(user.id) || event.salesman.includes(user.id))
@@ -1381,6 +1394,8 @@ function downloadReport() {
           formatTime(eventEnd(event)),
           eventTypes[event.type].label,
           customerName(event),
+          userNames(event.setter),
+          userNames(event.salesman),
           resultText(event),
           event.address,
           event.notes,
