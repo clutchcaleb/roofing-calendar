@@ -1,15 +1,6 @@
-const STORAGE_KEY = "roots_roofing_calendar_events_v1";
-const USERS_KEY = "roots_roofing_calendar_users_v2";
-const SESSION_KEY = "roots_roofing_calendar_session_v1";
-const DATA_VERSION_KEY = "roots_roofing_calendar_clean_start_v3";
-
-if (localStorage.getItem(DATA_VERSION_KEY) !== "start_end_times_no_mock") {
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem("roots_roofing_calendar_users_v1");
-  localStorage.removeItem(USERS_KEY);
-  localStorage.removeItem(SESSION_KEY);
-  localStorage.setItem(DATA_VERSION_KEY, "start_end_times_no_mock");
-}
+const SUPABASE_URL = "https://tsoltsgajvvvgejvlfdz.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzb2x0c2dhanZ2dmdlanZsZmR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTU4NTMsImV4cCI6MjA5NjYzMTg1M30.nmNWNKG7Vo8BWahDDk69Bf_wddZmuXPfqMdqkOdt4DA";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const eventTypes = {
   inspection: {
@@ -28,7 +19,6 @@ const eventTypes = {
 
 const defaultUsers = [];
 
-const initialUsers = loadUsers();
 const state = {
   page: "calendar",
   viewMode: "month",
@@ -38,21 +28,16 @@ const state = {
   previewEventId: null,
   draftDate: toDateInputValue(new Date()),
   addressSuggestions: [],
-  users: initialUsers,
-  currentUserId: localStorage.getItem(SESSION_KEY) || "",
-  events: loadEvents(),
+  users: [],
+  currentUserId: "",
+  events: [],
+  loading: true,
   reportUserIds: [],
   reportStartDate: toDateInputValue(startOfMonth(new Date())),
   reportEndDate: toDateInputValue(new Date()),
   expandedReportUserIds: [],
   pendingToast: "",
 };
-
-if (!state.reportUserIds.length) state.reportUserIds = state.users.map((user) => user.id);
-if (state.currentUserId && !state.users.some((user) => user.id === state.currentUserId)) {
-  state.currentUserId = "";
-  localStorage.removeItem(SESSION_KEY);
-}
 
 function userFromName(name) {
   const parts = name.trim().split(/\s+/);
@@ -69,24 +54,6 @@ function userName(user) {
   return [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
 }
 
-function loadUsers() {
-  const saved = localStorage.getItem(USERS_KEY);
-  if (!saved) return defaultUsers;
-  const parsed = JSON.parse(saved);
-  const users = parsed.map((item) => (typeof item === "string" ? userFromName(item) : item));
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  return users;
-}
-
-function saveUsers() {
-  localStorage.setItem(USERS_KEY, JSON.stringify(state.users));
-}
-
-function loadEvents() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  return saved ? JSON.parse(saved).map(migrateEvent) : [];
-}
-
 function migrateEvent(event) {
   const startTime = event.startTime || event.time || "09:00";
   return {
@@ -101,13 +68,76 @@ function migrateEvent(event) {
 
 function migrateUserValues(values) {
   return values.map((value) => {
-    const match = initialUsers.find((user) => user.id === value || userName(user) === value);
+    const match = state.users.find((user) => user.id === value || userName(user) === value);
     return match ? match.id : value;
   });
 }
 
-function saveEvents() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.events));
+async function loadAppData() {
+  const { data: sessionData } = await db.auth.getSession();
+  state.currentUserId = sessionData.session?.user?.id || "";
+  if (!state.currentUserId) {
+    state.loading = false;
+    render();
+    return;
+  }
+  await ensureProfile(sessionData.session.user);
+  const [{ data: profiles, error: profileError }, { data: events, error: eventError }] = await Promise.all([
+    db.from("profiles").select("id, first_name, last_name, phone, email").order("first_name"),
+    db.from("calendar_events").select("id, payload").order("date"),
+  ]);
+  if (profileError || eventError) {
+    state.pendingToast = "Run supabase-schema.sql in Supabase, then reload.";
+  }
+  state.users = (profiles || []).map(profileFromRow);
+  state.events = (events || []).map((row) => migrateEvent(row.payload || { id: row.id }));
+  state.reportUserIds = state.users.map((user) => user.id);
+  state.loading = false;
+  render();
+}
+
+async function ensureProfile(user) {
+  const meta = user.user_metadata || {};
+  const profile = {
+    id: user.id,
+    first_name: meta.firstName || meta.first_name || "",
+    last_name: meta.lastName || meta.last_name || "",
+    phone: meta.phone || "",
+    email: user.email || meta.email || "",
+  };
+  await db.from("profiles").upsert(profile, { onConflict: "id", ignoreDuplicates: true });
+}
+
+function profileFromRow(row) {
+  return {
+    id: row.id,
+    firstName: row.first_name || "",
+    lastName: row.last_name || "",
+    phone: row.phone || "",
+    email: row.email || "",
+  };
+}
+
+function eventRow(event) {
+  return {
+    id: event.id,
+    type: event.type,
+    date: event.date,
+    start_time: eventStart(event),
+    end_time: eventEnd(event),
+    customer_name: customerName(event),
+    address: event.address || "",
+    payload: event,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function saveEvents() {
+  if (!state.currentUserId) return;
+  const rows = state.events.map(eventRow);
+  if (!rows.length) return;
+  const { error } = await db.from("calendar_events").upsert(rows, { onConflict: "id" });
+  if (error) toast("Event could not sync.");
 }
 
 function startOfMonth(date) {
@@ -246,7 +276,7 @@ function emptyEvent(type = "inspection", date = state.draftDate) {
 }
 
 function render() {
-  document.getElementById("app").innerHTML = state.currentUserId ? appHtml() : loginHtml();
+  document.getElementById("app").innerHTML = state.loading ? loadingHtml() : state.currentUserId ? appHtml() : loginHtml();
   bind();
   centerCurrentTimeSlot();
   if (state.pendingToast) {
@@ -256,16 +286,28 @@ function render() {
   }
 }
 
+function loadingHtml() {
+  return `
+    <main class="login-shell">
+      <section class="login-panel">
+        <h1>calendar</h1>
+        <p class="muted">Loading...</p>
+      </section>
+      <div id="toast" class="toast"></div>
+    </main>
+  `;
+}
+
 function loginHtml() {
   return `
     <main class="login-shell">
       <section class="login-panel">
         <h1>calendar</h1>
         <div class="field">
-          <label for="loginUser">User</label>
-          <select id="loginUser">${state.users.map((user) => `<option value="${user.id}">${escapeHtml(userName(user))}</option>`).join("")}</select>
+          <label for="loginEmail">Email</label>
+          <input id="loginEmail" name="email" type="email" autocomplete="email" required>
         </div>
-        <button class="primary-btn" data-action="login">Login</button>
+        <button class="primary-btn" data-action="login">Email Login Link</button>
         <button class="secondary-btn" data-action="show-create-user">Create New User</button>
       </section>
       ${createUserHtml("login")}
@@ -857,16 +899,21 @@ function handleAction(event) {
   if (action === "download-report") return downloadReport();
 }
 
-function login() {
-  const select = document.getElementById("loginUser");
-  state.currentUserId = select.value;
-  localStorage.setItem(SESSION_KEY, state.currentUserId);
-  render();
+async function login() {
+  const input = document.getElementById("loginEmail");
+  if (!input?.reportValidity()) return;
+  const { error } = await db.auth.signInWithOtp({
+    email: input.value.trim(),
+    options: { emailRedirectTo: cleanRedirectUrl() },
+  });
+  toast(error ? error.message : "Check your email for the login link.");
 }
 
-function logout() {
+async function logout() {
+  await db.auth.signOut();
   state.currentUserId = "";
-  localStorage.removeItem(SESSION_KEY);
+  state.events = [];
+  state.users = [];
   render();
 }
 
@@ -878,24 +925,23 @@ function closeCreateUser() {
   document.getElementById("userOverlay")?.classList.remove("open");
 }
 
-function createUser() {
+async function createUser() {
   const form = document.getElementById("userForm");
   if (!form || !form.reportValidity()) return;
   const data = new FormData(form);
-  const user = {
-    id: crypto.randomUUID(),
-    firstName: data.get("firstName").trim(),
-    lastName: data.get("lastName").trim(),
-    phone: data.get("phone").trim(),
-    email: data.get("email").trim(),
-  };
-  state.users.push(user);
-  state.reportUserIds.push(user.id);
-  state.currentUserId = user.id;
-  localStorage.setItem(SESSION_KEY, user.id);
-  saveUsers();
-  state.pendingToast = "User created.";
-  render();
+  const email = data.get("email").trim();
+  const { error } = await db.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: cleanRedirectUrl(),
+      data: {
+        firstName: data.get("firstName").trim(),
+        lastName: data.get("lastName").trim(),
+        phone: data.get("phone").trim(),
+      },
+    },
+  });
+  toast(error ? error.message : "Check your email to finish creating the user.");
 }
 
 function setPage(page) {
@@ -1251,6 +1297,20 @@ function toast(message) {
   }, 2600);
 }
 
+function cleanRedirectUrl() {
+  return window.location.href.split("#")[0];
+}
+
+db.auth.onAuthStateChange(async (_event, session) => {
+  if (state.loading) return;
+  state.currentUserId = session?.user?.id || "";
+  state.loading = true;
+  state.events = [];
+  state.users = [];
+  render();
+  await loadAppData();
+});
+
 function escapeHtml(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -1262,4 +1322,4 @@ function escapeAttr(value = "") {
   return escapeHtml(value).replaceAll('"', "&quot;");
 }
 
-render();
+loadAppData();
