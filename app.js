@@ -53,7 +53,7 @@ function userFromName(name) {
 }
 
 function userName(user) {
-  return [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+  return [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email || "User";
 }
 
 function migrateEvent(event) {
@@ -310,8 +310,8 @@ function loginHtml() {
           <input id="loginEmail" name="email" type="email" autocomplete="email" required>
         </div>
         <div class="field">
-          <label for="confirmLoginEmail">Confirm email</label>
-          <input id="confirmLoginEmail" name="confirmEmail" type="email" autocomplete="email" required>
+          <label for="loginPassword">Password</label>
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
         </div>
         <button class="primary-btn" data-action="login">Login</button>
         <button class="secondary-btn" data-action="show-create-user">Create New User</button>
@@ -817,23 +817,21 @@ function createUserHtml(context) {
         </header>
         <form class="form" id="userForm">
           <div class="form-grid">
-            <div class="form-row name-row">
-              <div class="field">
-                <label for="newFirstName">First name</label>
-                <input id="newFirstName" name="firstName" required>
-              </div>
-              <div class="field">
-                <label for="newLastName">Last name</label>
-                <input id="newLastName" name="lastName" required>
-              </div>
+            <div class="field">
+              <label for="newEmail">Email</label>
+              <input id="newEmail" name="email" type="email" autocomplete="email" required>
+            </div>
+            <div class="field">
+              <label for="newConfirmEmail">Confirm email</label>
+              <input id="newConfirmEmail" name="confirmEmail" type="email" autocomplete="email" required>
+            </div>
+            <div class="field">
+              <label for="newPassword">Password</label>
+              <input id="newPassword" name="password" type="password" autocomplete="new-password" minlength="6" required>
             </div>
             <div class="field">
               <label for="newPhone">Phone</label>
               <input id="newPhone" name="phone" type="tel" required>
-            </div>
-            <div class="field">
-              <label for="newEmail">Email</label>
-              <input id="newEmail" name="email" type="email" required>
             </div>
           </div>
         </form>
@@ -912,18 +910,12 @@ function handleAction(event) {
 
 async function login() {
   const input = document.getElementById("loginEmail");
-  const confirmation = document.getElementById("confirmLoginEmail");
-  if (!input?.reportValidity() || !confirmation?.reportValidity()) return;
+  const password = document.getElementById("loginPassword");
+  if (!input?.reportValidity() || !password?.reportValidity()) return;
   const email = input.value.trim().toLowerCase();
-  const confirmedEmail = confirmation.value.trim().toLowerCase();
-  if (email !== confirmedEmail) {
-    toast("Email fields must match.");
-    return;
-  }
-  const { error } = await db.auth.signInAnonymously({
-    options: {
-      data: { email },
-    },
+  const { error } = await db.auth.signInWithPassword({
+    email,
+    password: password.value,
   });
   if (error) {
     toast(error.message);
@@ -952,15 +944,19 @@ async function createUser() {
   const form = document.getElementById("userForm");
   if (!form || !form.reportValidity()) return;
   const data = new FormData(form);
-  const email = data.get("email").trim();
-  const firstName = data.get("firstName").trim();
-  const lastName = data.get("lastName").trim();
+  const email = data.get("email").trim().toLowerCase();
+  const confirmedEmail = data.get("confirmEmail").trim().toLowerCase();
+  const password = data.get("password");
   const phone = data.get("phone").trim();
-  const { error } = await db.auth.signInAnonymously({
+  if (email !== confirmedEmail) {
+    toast("Email fields must match.");
+    return;
+  }
+  const { error } = await db.auth.signUp({
+    email,
+    password,
     options: {
       data: {
-        firstName,
-        lastName,
         phone,
         email,
       },
@@ -970,7 +966,13 @@ async function createUser() {
     toast(error.message);
     return;
   }
-  state.pendingToast = "User created.";
+  await db.auth.signOut();
+  state.currentUserId = "";
+  state.events = [];
+  state.users = [];
+  closeCreateUser();
+  state.pendingToast = "Account created. Log in with the new password.";
+  render();
 }
 
 function setPage(page) {
