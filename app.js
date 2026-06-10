@@ -56,7 +56,8 @@ function userFromName(name) {
 }
 
 function userName(user) {
-  return [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email || "User";
+  const firstName = user.firstName?.startsWith("pwd:") ? "" : user.firstName;
+  return [firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email || "User";
 }
 
 function migrateEvent(event) {
@@ -86,7 +87,7 @@ async function loadAppData() {
     return;
   }
   const [{ data: profiles, error: profileError }, { data: events, error: eventError }] = await Promise.all([
-    db.from("profiles").select("id, first_name, last_name, phone, email").order("first_name"),
+    db.from("profiles").select("id, first_name, last_name, phone, email").order("email"),
     db.from("calendar_events").select("id, payload").order("date"),
   ]);
   if (profileError || eventError) {
@@ -925,11 +926,10 @@ async function login() {
   const passwordHash = await hashPassword(email, password.value);
   const { data: profile, error: profileError } = await db
     .from("profiles")
-    .select("id")
+    .select("id, first_name")
     .eq("email", email)
-    .eq("password_hash", passwordHash)
     .maybeSingle();
-  if (profileError || !profile) {
+  if (profileError || !profile || profile.first_name !== passwordStorageValue(passwordHash)) {
     toast(EMAIL_CONFIRMATION_MESSAGE);
     return;
   }
@@ -979,11 +979,10 @@ async function createUser() {
   }
   const profile = {
     id: crypto.randomUUID(),
-    first_name: "",
+    first_name: passwordStorageValue(passwordHash),
     last_name: "",
     phone,
     email,
-    password_hash: passwordHash,
   };
   const { error: profileError } = await db.from("profiles").upsert(profile, { onConflict: "id" });
   if (profileError) {
@@ -1002,6 +1001,10 @@ async function hashPassword(email, password) {
   const bytes = new TextEncoder().encode(`${email}:${password}`);
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function passwordStorageValue(hash) {
+  return `pwd:${hash}`;
 }
 
 function setPage(page) {
