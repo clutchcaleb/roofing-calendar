@@ -526,6 +526,14 @@ textarea {
   font-size: 12px;
 }
 
+.collapse-btn strong.empty {
+  background: var(--red);
+}
+
+.collapse-btn strong.selected {
+  background: var(--blue);
+}
+
 .collapse-btn span:last-child {
   color: var(--blue);
   font-size: 12px;
@@ -873,6 +881,31 @@ textarea {
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.preview-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.result-badge {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  background: #eef2f7;
+  color: var(--text);
+}
+
+.result-badge.good {
+  background: #e6f4ea;
+  color: #137333;
+}
+
+.result-badge.bad {
+  background: #fce8e6;
+  color: var(--red);
 }
 
 .login-shell {

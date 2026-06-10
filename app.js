@@ -644,7 +644,7 @@ function previewHtml() {
           <dt>Address</dt><dd>${escapeHtml(event.address || "No address")}</dd>
           <dt>Phone</dt><dd>${escapeHtml(event.phone || "No phone")}</dd>
           <dt>Email</dt><dd>${escapeHtml(event.email || "No email")}</dd>
-          <dt>Result</dt><dd>${escapeHtml(resultText(event) || "No result")}</dd>
+          <dt>Result</dt><dd class="preview-results">${resultBadgesHtml(event)}</dd>
           <dt>Notes</dt><dd>${escapeHtml(event.notes || "No notes")}</dd>
         </dl>
       </aside>
@@ -659,6 +659,25 @@ function resultText(event) {
     return `${event.adjusterResults.join(", ")}${amount}`.trim();
   }
   return event.followupResults.join(", ");
+}
+
+function eventResults(event) {
+  if (event.type === "inspection") return event.inspectionResults;
+  if (event.type === "adjuster") return event.adjusterResults.map((result) => result === "approved" && event.approvedAmount ? `${result} ($${event.approvedAmount})` : result);
+  return event.followupResults;
+}
+
+function resultBadgesHtml(event) {
+  const results = eventResults(event);
+  if (!results.length) return `<strong>No result</strong>`;
+  return results.map((result) => `<strong class="result-badge ${resultBadgeClass(result)}">${escapeHtml(result)}</strong>`).join("");
+}
+
+function resultBadgeClass(result) {
+  const clean = result.toLowerCase();
+  if (clean.includes("contingency") || clean.includes("retail") || clean.includes("claim filed")) return "good";
+  if (clean.includes("no show") || clean.includes("no damage")) return "bad";
+  return "neutral";
 }
 
 function typeOptions(selected) {
@@ -788,7 +807,7 @@ function userGroup(label, name, selected) {
     <div class="field full" data-user-group="${name}">
       <button type="button" class="collapse-btn" data-action="toggle-user-group" data-group="${name}" aria-expanded="${isOpen}">
         <span>${escapeHtml(label)}</span>
-        <strong>${selectedCount}</strong>
+        <strong class="${selectedCount > 0 ? "selected" : "empty"}">${selectedCount}</strong>
         <span data-collapse-text>${isOpen ? "Collapse" : "Expand"}</span>
       </button>
       <div class="segment collapsible ${isOpen ? "open" : ""}">
