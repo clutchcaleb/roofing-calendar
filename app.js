@@ -308,7 +308,11 @@ function loginHtml() {
           <label for="loginEmail">Email</label>
           <input id="loginEmail" name="email" type="email" autocomplete="email" required>
         </div>
-        <button class="primary-btn" data-action="login">Email Login Link</button>
+        <div class="field">
+          <label for="confirmLoginEmail">Confirm email</label>
+          <input id="confirmLoginEmail" name="confirmEmail" type="email" autocomplete="email" required>
+        </div>
+        <button class="primary-btn" data-action="login">Login</button>
         <button class="secondary-btn" data-action="show-create-user">Create New User</button>
       </section>
       ${createUserHtml("login")}
@@ -902,12 +906,24 @@ function handleAction(event) {
 
 async function login() {
   const input = document.getElementById("loginEmail");
-  if (!input?.reportValidity()) return;
-  const { error } = await db.auth.signInWithOtp({
-    email: input.value.trim(),
-    options: { emailRedirectTo: cleanRedirectUrl() },
+  const confirmation = document.getElementById("confirmLoginEmail");
+  if (!input?.reportValidity() || !confirmation?.reportValidity()) return;
+  const email = input.value.trim().toLowerCase();
+  const confirmedEmail = confirmation.value.trim().toLowerCase();
+  if (email !== confirmedEmail) {
+    toast("Email fields must match.");
+    return;
+  }
+  const { error } = await db.auth.signInAnonymously({
+    options: {
+      data: { email },
+    },
   });
-  toast(error ? error.message : "Check your email for the login link.");
+  if (error) {
+    toast(error.message);
+    return;
+  }
+  state.pendingToast = "Logged in.";
 }
 
 async function logout() {
@@ -931,18 +947,24 @@ async function createUser() {
   if (!form || !form.reportValidity()) return;
   const data = new FormData(form);
   const email = data.get("email").trim();
-  const { error } = await db.auth.signInWithOtp({
-    email,
+  const firstName = data.get("firstName").trim();
+  const lastName = data.get("lastName").trim();
+  const phone = data.get("phone").trim();
+  const { error } = await db.auth.signInAnonymously({
     options: {
-      emailRedirectTo: cleanRedirectUrl(),
       data: {
-        firstName: data.get("firstName").trim(),
-        lastName: data.get("lastName").trim(),
-        phone: data.get("phone").trim(),
+        firstName,
+        lastName,
+        phone,
+        email,
       },
     },
   });
-  toast(error ? error.message : "Check your email to finish creating the user.");
+  if (error) {
+    toast(error.message);
+    return;
+  }
+  state.pendingToast = "User created.";
 }
 
 function setPage(page) {
