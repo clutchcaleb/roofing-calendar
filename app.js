@@ -27,6 +27,7 @@ const state = {
   viewDate: startOfMonth(new Date()),
   selectedEventId: null,
   previewEventId: null,
+  drawerCollapsed: false,
   draftDate: toDateInputValue(new Date()),
   addressSuggestions: [],
   users: [],
@@ -439,7 +440,7 @@ function timeCellHtml(date, hour) {
   const now = new Date();
   const isCurrentHour = dateKey === toDateInputValue(now) && hour === now.getHours();
   const marker = isCurrentHour ? `<div class="current-time-marker" style="top: ${(now.getMinutes() / 60) * 100}%"><span>${formatTime(toTimeInputValue(now))}</span></div>` : "";
-  return `<div class="time-cell ${isCurrentHour ? "has-current-time" : ""}" data-date="${dateKey}" data-hour="${hour}" ${isCurrentHour ? "data-current-time-cell=\"true\"" : ""}>${marker}${eventRowsHtml(events, true)}</div>`;
+  return `<div class="time-cell ${isCurrentHour ? "has-current-time" : ""}" data-action="set-time-slot" data-date="${dateKey}" data-hour="${hour}" ${isCurrentHour ? "data-current-time-cell=\"true\"" : ""}>${marker}${eventRowsHtml(events, true)}</div>`;
 }
 
 function hourLabel(hour) {
@@ -581,10 +582,11 @@ function drawerHtml() {
   if (!event) return `<div class="overlay" id="drawer"></div>`;
 
   return `
-    <div class="overlay open" id="drawer">
+    <div class="overlay open drawer-overlay ${state.drawerCollapsed ? "peek" : ""}" id="drawer">
       <aside class="drawer" role="dialog" aria-modal="true">
         <header class="drawer-head">
           <button class="icon-btn" title="Close" data-action="close">×</button>
+          <button class="icon-btn" title="Shrink" data-action="toggle-drawer-size">${state.drawerCollapsed ? "▴" : "▾"}</button>
           <div class="drawer-title">${escapeHtml(eventTitle(event))}</div>
           <button class="primary-btn" data-action="save">Save</button>
         </header>
@@ -625,6 +627,7 @@ function previewHtml() {
         <header class="preview-head">
           <button class="icon-btn" title="Close" data-action="close-preview">×</button>
           <div class="drawer-title">${escapeHtml(eventTitle(event))}</div>
+          <button class="icon-btn danger" title="Delete event" data-action="delete-event" data-id="${event.id}">&#128465;</button>
         </header>
         <div class="preview-actions">
           <button class="icon-action" title="Navigate" data-action="navigate-preview" data-id="${event.id}">➤</button>
@@ -893,7 +896,9 @@ function handleAction(event) {
   if (action === "edit") return editEvent(event.currentTarget.dataset.id);
   if (action === "close-preview") return closePreview();
   if (action === "close") return closeEvent();
+  if (action === "toggle-drawer-size") return toggleDrawerSize();
   if (action === "save") return saveCurrentEvent();
+  if (action === "delete-event") return deleteEvent(event.currentTarget.dataset.id);
   if (action === "navigate") return navigateToCurrentAddress();
   if (action === "select-address") return selectAddress(Number(event.currentTarget.dataset.index));
   if (action === "navigate-preview") return navigateEvent(event.currentTarget.dataset.id);
@@ -902,6 +907,7 @@ function handleAction(event) {
   if (action === "hour-height") return toggleHourHeight();
   if (action === "toggle-report-detail") return toggleReportDetail(event.currentTarget.dataset.id);
   if (action === "download-report") return downloadReport();
+  if (action === "set-time-slot") return setTimeSlot(event);
 }
 
 async function login() {
@@ -1001,6 +1007,7 @@ function openEvent(event) {
   state.events.push(event);
   state.selectedEventId = event.id;
   state.previewEventId = null;
+  state.drawerCollapsed = false;
   saveEvents();
   render();
 }
@@ -1014,17 +1021,57 @@ function previewEvent(id) {
 function editEvent(id) {
   state.selectedEventId = id;
   state.previewEventId = null;
+  state.drawerCollapsed = false;
   state.page = "calendar";
   render();
 }
 
 function closeEvent() {
   state.selectedEventId = null;
+  state.drawerCollapsed = false;
   render();
 }
 
 function closePreview() {
   state.previewEventId = null;
+  render();
+}
+
+function toggleDrawerSize() {
+  state.drawerCollapsed = !state.drawerCollapsed;
+  render();
+}
+
+async function deleteEvent(id) {
+  const event = state.events.find((item) => item.id === id);
+  if (!event) return;
+  if (!window.confirm(`Delete ${eventTitle(event)}?`)) return;
+  state.events = state.events.filter((item) => item.id !== id);
+  state.previewEventId = null;
+  state.selectedEventId = state.selectedEventId === id ? null : state.selectedEventId;
+  if (state.currentUserId) {
+    const { error } = await db.from("calendar_events").delete().eq("id", id);
+    if (error) {
+      toast("Event could not be deleted.");
+      return;
+    }
+  }
+  state.pendingToast = "Event deleted.";
+  render();
+}
+
+function setTimeSlot(event) {
+  if (event.target.closest(".event-chip")) return;
+  const model = currentEvent();
+  if (!model) return;
+  const hour = Number(event.currentTarget.dataset.hour);
+  const startTime = `${String(hour).padStart(2, "0")}:00`;
+  model.date = event.currentTarget.dataset.date;
+  model.startTime = startTime;
+  model.time = startTime;
+  model.endTime = addOneHour(startTime);
+  saveEvents();
+  state.pendingToast = "Event time updated.";
   render();
 }
 

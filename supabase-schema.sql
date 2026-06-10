@@ -60,3 +60,9 @@ on public.calendar_events for update
 to authenticated
 using (true)
 with check (true);
+
+drop policy if exists "Authenticated users can delete events" on public.calendar_events;
+create policy "Authenticated users can delete events"
+on public.calendar_events for delete
+to authenticated
+using (true);
