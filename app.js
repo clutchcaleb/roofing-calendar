@@ -723,9 +723,8 @@ function customerFields(event) {
     <div class="field full">
       <label for="address">Address</label>
       <div class="map-row">
-        <input id="address" name="address" autocomplete="street-address" list="addressList" value="${escapeAttr(event.address)}" required>
+        <input id="address" name="address" autocomplete="street-address" value="${escapeAttr(event.address)}" required>
       </div>
-      <datalist id="addressList">${state.addressSuggestions.map((item) => `<option value="${escapeAttr(item.display_name)}"></option>`).join("")}</datalist>
       <div id="addressSuggestions" class="address-suggestions">${addressSuggestionsHtml()}</div>
     </div>
   `;
@@ -887,7 +886,6 @@ function bind() {
   const address = document.getElementById("address");
   if (address) {
     address.addEventListener("input", debounce(searchAddress, 350));
-    address.addEventListener("change", verifyAddressSelection);
   }
   document.querySelectorAll('input[name="reportUsers"]').forEach((input) => {
     input.addEventListener("change", handleReportUserChange);
@@ -1279,12 +1277,6 @@ async function searchAddress(event) {
   if (query.length < 5) return;
   try {
     state.addressSuggestions = await lookupAddresses(query, 5);
-    const datalist = document.getElementById("addressList");
-    if (datalist) {
-      datalist.innerHTML = state.addressSuggestions
-        .map((item) => `<option value="${escapeAttr(item.display_name)}"></option>`)
-        .join("");
-    }
     const suggestionList = document.getElementById("addressSuggestions");
     if (suggestionList) {
       suggestionList.innerHTML = addressSuggestionsHtml();
@@ -1308,22 +1300,6 @@ function selectAddress(index) {
   saveEvents();
   state.pendingToast = "Address selected.";
   render();
-}
-
-function verifyAddressSelection(event) {
-  const model = currentEvent();
-  if (!model) return;
-  const match = state.addressSuggestions.find((item) => item.display_name === event.target.value);
-  model.addressVerified = Boolean(match);
-  if (match) {
-    model.address = match.display_name;
-    state.addressSuggestions = [];
-    state.pendingToast = "Address selected.";
-    saveEvents();
-    render();
-    return;
-  }
-  saveEvents();
 }
 
 async function lookupAddresses(query, limit) {
