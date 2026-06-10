@@ -487,6 +487,45 @@ textarea {
   gap: 8px;
 }
 
+.segment.collapsible {
+  display: none;
+}
+
+.segment.collapsible.open {
+  display: flex;
+}
+
+.collapse-btn {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 12px;
+  background: #f8fafc;
+  color: var(--text);
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  font-weight: 700;
+}
+
+.collapse-btn strong {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--blue);
+  color: white;
+  font-size: 12px;
+}
+
+.collapse-btn span:last-child {
+  color: var(--blue);
+  font-size: 12px;
+}
+
 .check-pill {
   min-height: 36px;
   border: 1px solid var(--line);

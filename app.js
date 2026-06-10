@@ -31,6 +31,7 @@ const state = {
   drawerCollapsed: false,
   draftDate: toDateInputValue(new Date()),
   addressSuggestions: [],
+  userGroupOpen: {},
   users: [],
   currentUserId: "",
   events: [],
@@ -780,10 +781,16 @@ function checkGroup(label, name, options, selected) {
 }
 
 function userGroup(label, name, selected) {
+  const isOpen = Boolean(state.userGroupOpen[name]);
+  const selectedCount = selected.length;
   return `
     <div class="field full">
-      <label>${label}</label>
-      <div class="segment">
+      <button type="button" class="collapse-btn" data-action="toggle-user-group" data-group="${name}" aria-expanded="${isOpen}">
+        <span>${escapeHtml(label)}</span>
+        <strong>${selectedCount}</strong>
+        <span>${isOpen ? "Collapse" : "Expand"}</span>
+      </button>
+      <div class="segment collapsible ${isOpen ? "open" : ""}">
         ${state.users.map((user) => `
           <label class="check-pill">
             <input type="checkbox" name="${name}" value="${user.id}" ${selected.includes(user.id) ? "checked" : ""}>
@@ -905,6 +912,7 @@ function handleAction(event) {
   if (action === "spawn-adjuster") return spawnEvent("adjuster");
   if (action === "spawn-followup") return spawnEvent("followup");
   if (action === "hour-height") return toggleHourHeight();
+  if (action === "toggle-user-group") return toggleUserGroup(event.currentTarget.dataset.group);
   if (action === "toggle-report-detail") return toggleReportDetail(event.currentTarget.dataset.id);
   if (action === "download-report") return downloadReport();
   if (action === "set-time-slot") return setTimeSlot(event);
@@ -1099,6 +1107,11 @@ function setTimeSlot(event) {
   model.endTime = addOneHour(startTime);
   saveEvents();
   state.pendingToast = "Event time updated.";
+  render();
+}
+
+function toggleUserGroup(group) {
+  state.userGroupOpen[group] = !state.userGroupOpen[group];
   render();
 }
 
