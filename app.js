@@ -1,7 +1,7 @@
 const SUPABASE_URL = "https://tsoltsgajvvvgejvlfdz.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzb2x0c2dhanZ2dmdlanZsZmR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTU4NTMsImV4cCI6MjA5NjYzMTg1M30.nmNWNKG7Vo8BWahDDk69Bf_wddZmuXPfqMdqkOdt4DA";
 const PUBLIC_SITE_URL = "https://clutchcaleb.github.io/roofing-calendar/";
-const EMAIL_CONFIRMATION_MESSAGE = "Turn off email confirmations in Supabase Auth so new accounts can log in immediately.";
+const EMAIL_CONFIRMATION_MESSAGE = "Account not found or password is incorrect.";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const eventTypes = {
@@ -101,6 +101,7 @@ async function loadAppData() {
 
 async function ensureProfile(user) {
   const meta = user.user_metadata || {};
+  if (!user.email && !meta.email) return;
   const profile = {
     id: user.id,
     first_name: meta.firstName || meta.first_name || "",
@@ -914,15 +915,25 @@ async function login() {
   const password = document.getElementById("loginPassword");
   if (!input?.reportValidity() || !password?.reportValidity()) return;
   const email = input.value.trim().toLowerCase();
-  const { error } = await db.auth.signInWithPassword({
-    email,
-    password: password.value,
-  });
+  const passwordHash = await hashPassword(email, password.value);
+  const { error } = await db.auth.signInAnonymously();
   if (error) {
-    toast(error.message === "Invalid login credentials" ? `Invalid login. ${EMAIL_CONFIRMATION_MESSAGE}` : error.message);
+    toast(error.message);
+    return;
+  }
+  const { data: profile, error: profileError } = await db
+    .from("profiles")
+    .select("id")
+    .eq("email", email)
+    .eq("password_hash", passwordHash)
+    .maybeSingle();
+  if (profileError || !profile) {
+    await db.auth.signOut();
+    toast(EMAIL_CONFIRMATION_MESSAGE);
     return;
   }
   state.pendingToast = "Logged in.";
+  await loadAppData();
 }
 
 async function logout() {
@@ -953,22 +964,25 @@ async function createUser() {
     toast("Email fields must match.");
     return;
   }
-  const { data: signup, error } = await db.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        phone,
-        email,
-      },
-    },
+  const passwordHash = await hashPassword(email, password);
+  const { data: sessionData, error } = await db.auth.signInAnonymously({
+    options: { data: { phone, email } },
   });
   if (error) {
     toast(error.message);
     return;
   }
-  if (!signup.session) {
-    toast(EMAIL_CONFIRMATION_MESSAGE);
+  const profile = {
+    id: sessionData.user.id,
+    first_name: "",
+    last_name: "",
+    phone,
+    email,
+    password_hash: passwordHash,
+  };
+  const { error: profileError } = await db.from("profiles").upsert(profile, { onConflict: "id" });
+  if (profileError) {
+    toast(profileError.message);
     return;
   }
   await db.auth.signOut();
@@ -978,6 +992,12 @@ async function createUser() {
   closeCreateUser();
   state.pendingToast = "Account created. Log in with the new password.";
   render();
+}
+
+async function hashPassword(email, password) {
+  const bytes = new TextEncoder().encode(`${email}:${password}`);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function setPage(page) {
