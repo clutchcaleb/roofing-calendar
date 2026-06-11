@@ -582,6 +582,15 @@ textarea {
   min-height: 0;
 }
 
+.check-pill.disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.check-pill.disabled input {
+  cursor: not-allowed;
+}
+
 .map-row {
   display: grid;
   grid-template-columns: 1fr;

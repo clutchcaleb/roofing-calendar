@@ -894,16 +894,22 @@ function typeFields(event) {
 }
 
 function checkGroup(label, name, options, selected) {
+  const noShowSelected = selected.includes("no show");
+  const otherSelected = selected.some((option) => option !== "no show");
   return `
     <div class="field full">
       <label>${label}</label>
       <div class="segment">
-        ${options.map((option) => `
-          <label class="check-pill">
-            <input type="checkbox" name="${name}" value="${escapeAttr(option)}" ${selected.includes(option) ? "checked" : ""}>
+        ${options.map((option) => {
+          const disabled = (noShowSelected && option !== "no show") || (otherSelected && option === "no show");
+
+          return `
+          <label class="check-pill ${disabled ? "disabled" : ""}">
+            <input type="checkbox" name="${name}" value="${escapeAttr(option)}" ${selected.includes(option) ? "checked" : ""} ${disabled ? "disabled" : ""}>
             ${escapeHtml(option)}
           </label>
-        `).join("")}
+        `;
+        }).join("")}
       </div>
     </div>
   `;
