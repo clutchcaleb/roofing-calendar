@@ -29,6 +29,7 @@ const state = {
   viewDate: startOfMonth(new Date()),
   selectedEventId: null,
   previewEventId: null,
+  shouldCenterCurrentTimeSlot: false,
   drawerCollapsed: false,
   draftDate: toDateInputValue(new Date()),
   addressSuggestions: [],
@@ -99,7 +100,19 @@ async function loadAppData() {
   if (profileError || eventError) {
     state.pendingToast = "Run supabase-schema.sql in Supabase, then reload.";
   }
-  state.users = (profiles || []).map(profileFromRow);
+  const loadedUsers = (profiles || []).map(profileFromRow);
+  if (!profileError && !loadedUsers.some((user) => user.id === state.currentUserId)) {
+    localStorage.removeItem(APP_SESSION_KEY);
+    state.currentUserId = "";
+    state.currentUserRole = "rep";
+    state.events = [];
+    state.users = [];
+    state.loading = false;
+    state.pendingToast = "This user no longer exists.";
+    render();
+    return;
+  }
+  state.users = loadedUsers;
   const currentUser = state.users.find((user) => user.id === state.currentUserId);
   state.currentUserRole = currentUser?.role || "rep";
   state.events = (events || []).map((row) => migrateEvent(row.payload || { id: row.id }));
@@ -301,7 +314,10 @@ function emptyEvent(type = "inspection", date = state.draftDate) {
 function render() {
   document.getElementById("app").innerHTML = state.loading ? loadingHtml() : state.currentUserId ? appHtml() : loginHtml();
   bind();
-  centerCurrentTimeSlot();
+  if (state.shouldCenterCurrentTimeSlot) {
+    state.shouldCenterCurrentTimeSlot = false;
+    centerCurrentTimeSlot();
+  }
   if (state.pendingToast) {
     const message = state.pendingToast;
     state.pendingToast = "";
@@ -479,6 +495,7 @@ function toTimeInputValue(date) {
 function eventsForDate(dateKey) {
   return state.events
     .filter((event) => event.date === dateKey)
+    .filter((event) => !state.draftEventIds.includes(event.id))
     .sort((a, b) => eventStart(a).localeCompare(eventStart(b)));
 }
 
@@ -581,6 +598,7 @@ function reportCardHtml(user) {
         <div class="metric"><strong>${nextWeek.length}</strong><span>next 7 days</span></div>
         <div class="metric"><strong>${salesInspections.length}</strong><span>salesman inspections</span></div>
         <button class="secondary-btn" data-action="toggle-report-detail" data-id="${user.id}">Detailed Display</button>
+        <button class="secondary-btn danger" data-action="delete-user" data-id="${user.id}">Delete User</button>
       </div>
       <div class="result-grid">
         ${Object.entries(resultCounts).map(([result, count]) => `<div><strong>${count}</strong><span>${escapeHtml(result)}</span></div>`).join("")}
@@ -1009,10 +1027,10 @@ function handleAction(event) {
   if (action === "hour-height") return toggleHourHeight();
   if (action === "toggle-user-group") return toggleUserGroup(event.currentTarget.dataset.group);
   if (action === "toggle-report-detail") return toggleReportDetail(event.currentTarget.dataset.id);
+  if (action === "delete-user") return deleteUser(event.currentTarget.dataset.id);
   if (action === "download-report") return downloadReport();
   if (action === "make-admin") return updateUserRole(event.currentTarget.dataset.id, "admin");
   if (action === "make-rep") return updateUserRole(event.currentTarget.dataset.id, "rep");
-  if (action === "delete-user") return deleteUser(event.currentTarget.dataset.id);
   if (action === "set-time-slot") return setTimeSlot(event);
 }
 
@@ -1136,6 +1154,7 @@ function setViewMode(mode) {
   state.viewMode = mode;
   if (mode === "month") state.viewDate = startOfMonth(state.viewDate);
   if (previousMode === "month" && mode !== "month") state.viewDate = new Date();
+  if (mode !== "month") state.shouldCenterCurrentTimeSlot = true;
   render();
 }
 
@@ -1149,6 +1168,7 @@ function openDay(event) {
 function goToday() {
   const today = new Date();
   state.viewDate = state.viewMode === "month" ? startOfMonth(today) : today;
+  if (state.viewMode !== "month") state.shouldCenterCurrentTimeSlot = true;
   render();
 }
 
@@ -1163,10 +1183,10 @@ function moveDate(action) {
 
 function openEvent(event) {
   state.events.push(event);
+  if (!state.draftEventIds.includes(event.id)) state.draftEventIds.push(event.id);
   state.selectedEventId = event.id;
   state.previewEventId = null;
   state.drawerCollapsed = false;
-  saveEvents();
   render();
 }
 
@@ -1185,6 +1205,10 @@ function editEvent(id) {
 }
 
 function closeEvent() {
+  if (state.selectedEventId && state.draftEventIds.includes(state.selectedEventId)) {
+    state.events = state.events.filter((event) => event.id !== state.selectedEventId);
+    state.draftEventIds = state.draftEventIds.filter((id) => id !== state.selectedEventId);
+  }
   state.selectedEventId = null;
   state.drawerCollapsed = false;
   render();
@@ -1264,6 +1288,9 @@ function handleFormInput(event) {
   if (target.type === "checkbox") {
     const values = exclusiveNoShowValues(target);
     eventModel[target.name] = values;
+    if (target.name === "setter" || target.name === "salesman") {
+      updateUserGroupCount(target.name, values.length);
+    }
   } else if (target.name) {
     eventModel[target.name] = target.value;
     if (target.name === "startTime") {
@@ -1278,6 +1305,14 @@ function handleFormInput(event) {
   if (eventModel.type === "followup" && target.name === "followupResults") maybeUpdateInspection(eventModel);
   saveEvents();
   renderHeaderOnly();
+}
+
+function updateUserGroupCount(group, count) {
+  const countNode = document.querySelector(`[data-user-group="${group}"] .collapse-btn strong`);
+  if (!countNode) return;
+  countNode.textContent = String(count);
+  countNode.classList.toggle("selected", count > 0);
+  countNode.classList.toggle("empty", count === 0);
 }
 
 function exclusiveNoShowValues(target) {
@@ -1321,6 +1356,44 @@ function saveCurrentEvent() {
   saveEvents();
   state.selectedEventId = null;
   state.pendingToast = "Event saved.";
+  render();
+}
+
+async function deleteUser(userId) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) return;
+  if (!window.confirm(`Delete ${userName(user)}? This removes them from reports and event setter/salesman assignments.`)) return;
+
+  const affectedEvents = state.events.filter((event) => event.setter.includes(userId) || event.salesman.includes(userId));
+  const nextEvents = state.events.map((event) => ({
+    ...event,
+    setter: event.setter.filter((id) => id !== userId),
+    salesman: event.salesman.filter((id) => id !== userId),
+  }));
+
+  const { error } = await db.from("profiles").delete().eq("id", userId);
+  if (error) {
+    toast("User could not be deleted. Run the updated Supabase schema, then try again.");
+    return;
+  }
+
+  state.users = state.users.filter((item) => item.id !== userId);
+  state.reportUserIds = state.reportUserIds.filter((id) => id !== userId);
+  state.expandedReportUserIds = state.expandedReportUserIds.filter((id) => id !== userId);
+  state.events = nextEvents;
+
+  if (affectedEvents.length) {
+    const rows = state.events
+      .filter((event) => affectedEvents.some((affected) => affected.id === event.id))
+      .filter((event) => !state.draftEventIds.includes(event.id))
+      .map(eventRow);
+    if (rows.length) {
+      const { error: eventError } = await db.from("calendar_events").upsert(rows, { onConflict: "id" });
+      if (eventError) toast("User deleted, but some event assignments could not sync.");
+    }
+  }
+
+  state.pendingToast = "User deleted.";
   render();
 }
 
