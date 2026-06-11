@@ -478,8 +478,24 @@ function timeCellHtml(date, hour) {
   const events = eventsForDate(dateKey).filter((event) => Number(eventStart(event).slice(0, 2)) === hour);
   const now = new Date();
   const isCurrentHour = dateKey === toDateInputValue(now) && hour === now.getHours();
+  const selectedBlock = selectedTimeBlockHtml(dateKey, hour);
   const marker = isCurrentHour ? `<div class="current-time-marker" style="top: ${(now.getMinutes() / 60) * 100}%"><span>${formatTime(toTimeInputValue(now))}</span></div>` : "";
-  return `<div class="time-cell ${isCurrentHour ? "has-current-time" : ""}" data-action="set-time-slot" data-date="${dateKey}" data-hour="${hour}" ${isCurrentHour ? "data-current-time-cell=\"true\"" : ""}>${marker}${eventRowsHtml(events, true)}</div>`;
+  return `<div class="time-cell ${isCurrentHour ? "has-current-time" : ""} ${selectedBlock ? "has-selected-time" : ""}" data-action="set-time-slot" data-date="${dateKey}" data-hour="${hour}" ${isCurrentHour ? "data-current-time-cell=\"true\"" : ""}>${selectedBlock}${marker}${eventRowsHtml(events, true)}</div>`;
+}
+
+function selectedTimeBlockHtml(dateKey, hour) {
+  const event = currentEvent();
+  if (!event || event.date !== dateKey) return "";
+
+  const start = timeToMinutes(eventStart(event));
+  const end = Math.max(timeToMinutes(eventEnd(event)), start + 15);
+  if (Math.floor(start / 60) !== hour) return "";
+
+  const startOffsetHours = (start % 60) / 60;
+  const durationHours = Math.max((end - start) / 60, 0.25);
+  const title = `${formatTime(eventStart(event))} - ${formatTime(eventEnd(event))}`;
+
+  return `<div class="selected-time-block" aria-hidden="true" title="${escapeAttr(title)}" style="top: calc(${startOffsetHours} * var(--hour-height)); height: calc(${durationHours} * var(--hour-height));"></div>`;
 }
 
 function hourLabel(hour) {
