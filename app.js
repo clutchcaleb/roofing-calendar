@@ -709,7 +709,7 @@ function drawerHtml() {
   if (!event) return `<div class="overlay" id="drawer"></div>`;
 
   return `
-    <div class="overlay open drawer-overlay ${state.drawerCollapsed ? "peek" : ""}" id="drawer">
+    <div class="overlay open drawer-overlay event-theme ${event.type} ${state.drawerCollapsed ? "peek" : ""}" id="drawer">
       <aside class="drawer" role="dialog" aria-modal="true">
         <header class="drawer-head">
           <button class="icon-btn" title="Close" data-action="close">×</button>
@@ -748,16 +748,16 @@ function previewHtml() {
   const event = state.previewEventId ? state.events.find((item) => item.id === state.previewEventId) : null;
   if (!event) return `<div class="overlay" id="preview"></div>`;
   return `
-    <div class="overlay open" id="preview">
+    <div class="overlay open" id="preview" data-action="close-preview">
       <aside class="preview-card" role="dialog" aria-modal="true">
         <header class="preview-head">
           <button class="icon-btn" title="Close" data-action="close-preview">×</button>
           <div class="drawer-title">${escapeHtml(eventTitle(event))}</div>
-          <button class="icon-btn danger" title="Delete event" data-action="delete-event" data-id="${event.id}">&#128465;</button>
+          <button class="icon-btn danger icon-trash" title="Delete event" data-action="delete-event" data-id="${event.id}" aria-label="Delete event">${trashIconSvg()}</button>
         </header>
         <div class="preview-actions">
           <button class="icon-action" title="Navigate" data-action="navigate-preview" data-id="${event.id}">➤</button>
-          <a class="icon-action" title="Call" href="tel:${escapeAttr(event.phone)}">☎</a>
+          <a class="icon-action phone-action" title="Call" href="tel:${escapeAttr(event.phone)}" aria-label="Call">${phoneIconSvg()}</a>
           <button class="icon-action" title="Edit" data-action="edit" data-id="${event.id}">✎</button>
         </div>
         <dl class="preview-details">
@@ -771,6 +771,22 @@ function previewHtml() {
         </dl>
       </aside>
     </div>
+  `;
+}
+
+function phoneIconSvg() {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" class="action-svg">
+      <path d="M6.7 2.9 9 2.4c.7-.1 1.4.2 1.7.9l1.1 2.7c.3.7.1 1.4-.4 1.9L10 9.2c1 2.1 2.7 3.8 4.8 4.8l1.3-1.4c.5-.5 1.3-.7 1.9-.4l2.7 1.1c.7.3 1 1 .9 1.7l-.5 2.3c-.2 1-1.1 1.7-2.1 1.7C10.3 19 5 13.7 5 5.1c0-1 .7-1.9 1.7-2.2Z" fill="currentColor"/>
+    </svg>
+  `;
+}
+
+function trashIconSvg() {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" class="action-svg">
+      <path d="M8.5 5.5V4.2c0-1 0.8-1.7 1.7-1.7h3.6c1 0 1.7.8 1.7 1.7v1.3H20v2H4v-2h4.5Zm2 0h3V4.4h-3v1.1ZM6.2 9h11.6l-.7 10.2c-.1 1.3-1.1 2.3-2.4 2.3H9.3c-1.3 0-2.3-1-2.4-2.3L6.2 9Zm3.3 2.2.5 7h1.7l-.4-7H9.5Zm3.2 0-.4 7H14l.5-7h-1.8Z" fill="currentColor"/>
+    </svg>
   `;
 }
 
@@ -1035,6 +1051,7 @@ function centerCurrentTimeSlot() {
 
 function handleAction(event) {
   const action = event.currentTarget.dataset.action;
+  if (action === "close-preview" && event.currentTarget.id === "preview" && event.target.closest(".preview-card")) return;
   if (action === "login") return login();
   if (action === "logout") return logout();
   if (action === "show-create-user") return showCreateUser();

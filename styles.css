@@ -142,6 +142,40 @@ button {
   background: #f1f3f4;
 }
 
+.event-theme.adjuster .primary-btn {
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.event-theme.adjuster .secondary-btn,
+.event-theme.adjuster .collapse-btn span:last-child {
+  color: var(--green);
+}
+
+.event-theme.adjuster input:focus,
+.event-theme.adjuster select:focus,
+.event-theme.adjuster textarea:focus {
+  border-color: var(--green);
+  outline: 2px solid rgba(24, 128, 56, 0.16);
+}
+
+.event-theme.followup .primary-btn {
+  background: #9334e6;
+  border-color: #9334e6;
+}
+
+.event-theme.followup .secondary-btn,
+.event-theme.followup .collapse-btn span:last-child {
+  color: #9334e6;
+}
+
+.event-theme.followup input:focus,
+.event-theme.followup select:focus,
+.event-theme.followup textarea:focus {
+  border-color: #9334e6;
+  outline: 2px solid rgba(147, 52, 230, 0.16);
+}
+
 .current-label {
   font-size: 20px;
   min-width: 112px;
@@ -934,6 +968,20 @@ textarea {
   place-items: center;
   text-decoration: none;
   font-size: 22px;
+}
+
+.action-svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.phone-action {
+  color: var(--blue);
+}
+
+.icon-trash {
+  color: var(--red);
 }
 
 .preview-details {
