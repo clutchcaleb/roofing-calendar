@@ -448,6 +448,7 @@ button {
   display: none;
   align-items: stretch;
   justify-content: center;
+  overscroll-behavior: contain;
 }
 
 .overlay.open {
@@ -461,7 +462,6 @@ button {
 
 .drawer-overlay.peek {
   background: transparent;
-  pointer-events: none;
 }
 
 .drawer-overlay.peek .drawer {
@@ -481,6 +481,8 @@ button {
   border-radius: 12px 12px 0 0;
   transition: height 180ms ease, max-height 180ms ease;
   overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .drawer-overlay.peek .drawer {
@@ -548,6 +550,7 @@ input,
 select,
 textarea {
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -828,6 +831,7 @@ textarea {
   display: flex;
   align-items: end;
   gap: 12px;
+  min-width: 0;
 }
 
 .report-date-row {
@@ -835,6 +839,7 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   min-width: min(420px, 100%);
+  max-width: 100%;
 }
 
 .report-grid {
@@ -858,6 +863,7 @@ textarea {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .report-card h2 {
@@ -941,6 +947,7 @@ textarea {
   border-radius: 8px;
   box-shadow: var(--shadow);
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .preview-head {

@@ -46,6 +46,7 @@ const state = {
   reportUserIds: [],
   reportStartDate: toDateInputValue(startOfMonth(new Date())),
   reportEndDate: toDateInputValue(new Date()),
+  reportUsersOpen: false,
   expandedReportUserIds: [],
   pendingToast: "",
 };
@@ -584,9 +585,13 @@ function reportsPageHtml() {
             <input id="reportEndDate" name="reportEndDate" type="date" value="${state.reportEndDate}">
           </div>
         </div>
-        <div class="field full">
-          <label>Users</label>
-          <div class="segment">
+        <div class="field full report-users" data-report-users>
+          <button type="button" class="collapse-btn" data-action="toggle-report-users" aria-expanded="${state.reportUsersOpen}">
+            <span>Users</span>
+            <strong class="${state.reportUserIds.length > 0 ? "selected" : "empty"}">${state.reportUserIds.length}</strong>
+            <span data-collapse-text>${state.reportUsersOpen ? "▴" : "▾"}</span>
+          </button>
+          <div class="segment collapsible ${state.reportUsersOpen ? "open" : ""}">
             ${state.users.map((user) => `
               <label class="check-pill">
                 <input type="checkbox" name="reportUsers" value="${user.id}" ${state.reportUserIds.includes(user.id) ? "checked" : ""}>
@@ -622,11 +627,10 @@ function reportCardHtml(user) {
     <article class="report-card">
       <div class="report-summary">
         <h2>${escapeHtml(userName(user))}</h2>
-        <div class="metric"><strong>${inspectionsSet.length}</strong><span>setter inspections</span></div>
         <div class="metric"><strong>${nextWeek.length}</strong><span>next 7 days</span></div>
-        <div class="metric"><strong>${salesInspections.length}</strong><span>salesman inspections</span></div>
+        <div class="metric"><strong>${inspectionsSet.length}</strong><span>sets</span></div>
+        <div class="metric"><strong>${salesInspections.length}</strong><span>inspections</span></div>
         <button class="secondary-btn" data-action="toggle-report-detail" data-id="${user.id}">Detailed Display</button>
-        <button class="secondary-btn danger" data-action="delete-user" data-id="${user.id}">Delete User</button>
       </div>
       <div class="result-grid">
         ${Object.entries(resultCounts).map(([result, count]) => `<div><strong>${count}</strong><span>${escapeHtml(result)}</span></div>`).join("")}
@@ -1078,6 +1082,7 @@ function handleAction(event) {
   if (action === "spawn-followup") return spawnEvent("followup");
   if (action === "toggle-me") return toggleMineOnly();
   if (action === "toggle-user-group") return toggleUserGroup(event.currentTarget.dataset.group);
+  if (action === "toggle-report-users") return toggleReportUsers();
   if (action === "toggle-report-detail") return toggleReportDetail(event.currentTarget.dataset.id);
   if (action === "delete-user") return deleteUser(event.currentTarget.dataset.id);
   if (action === "download-report") return downloadReport();
@@ -1088,7 +1093,7 @@ function handleAction(event) {
 
 function bindGridZoom() {
   const grid = document.querySelector(".time-grid");
-  if (!grid) return;
+  if (!grid || state.selectedEventId || state.previewEventId) return;
 
   grid.addEventListener("wheel", handleGridWheelZoom, { passive: false });
   grid.addEventListener("touchstart", handleGridTouchStart, { passive: true });
@@ -1097,6 +1102,7 @@ function bindGridZoom() {
 }
 
 function handleGridWheelZoom(event) {
+  if (state.selectedEventId || state.previewEventId) return;
   if (!event.ctrlKey) return;
   event.preventDefault();
   const direction = event.deltaY < 0 ? 1 : -1;
@@ -1104,12 +1110,14 @@ function handleGridWheelZoom(event) {
 }
 
 function handleGridTouchStart(event) {
+  if (state.selectedEventId || state.previewEventId) return;
   if (event.touches.length !== 2) return;
   state.gridZoomStartDistance = touchDistance(event.touches);
   state.gridZoomStartHourHeight = state.hourHeight;
 }
 
 function handleGridTouchMove(event) {
+  if (state.selectedEventId || state.previewEventId) return;
   if (event.touches.length !== 2 || !state.gridZoomStartDistance) return;
   event.preventDefault();
   const scale = touchDistance(event.touches) / state.gridZoomStartDistance;
@@ -1368,6 +1376,17 @@ function toggleUserGroup(group) {
   if (button) button.setAttribute("aria-expanded", String(isOpen));
   if (list) list.classList.toggle("open", isOpen);
   if (text) text.textContent = isOpen ? "Collapse" : "Expand";
+}
+
+function toggleReportUsers() {
+  state.reportUsersOpen = !state.reportUsersOpen;
+  const section = document.querySelector("[data-report-users]");
+  const button = section?.querySelector(".collapse-btn");
+  const list = section?.querySelector(".collapsible");
+  const text = button?.querySelector("[data-collapse-text]");
+  if (button) button.setAttribute("aria-expanded", String(state.reportUsersOpen));
+  if (list) list.classList.toggle("open", state.reportUsersOpen);
+  if (text) text.textContent = state.reportUsersOpen ? "▴" : "▾";
 }
 
 function currentEvent() {
@@ -1676,6 +1695,12 @@ async function deleteUser(id) {
 
 function handleReportUserChange() {
   state.reportUserIds = [...document.querySelectorAll('input[name="reportUsers"]:checked')].map((input) => input.value);
+  const countNode = document.querySelector("[data-report-users] .collapse-btn strong");
+  if (countNode) {
+    countNode.textContent = String(state.reportUserIds.length);
+    countNode.classList.toggle("selected", state.reportUserIds.length > 0);
+    countNode.classList.toggle("empty", state.reportUserIds.length === 0);
+  }
   render();
 }
 
@@ -1711,7 +1736,7 @@ function downloadReport() {
   const rows = [
     ["Date Range", state.reportStartDate || "Any", state.reportEndDate || "Any"],
     [],
-    ["User", "Setter Inspections", "Next 7 Days", "Salesman Inspections", ...eventTypes.inspection.results],
+    ["User", "Next 7 Days", "Sets", "Inspections", ...eventTypes.inspection.results],
   ];
   const filteredEvents = reportEvents();
   state.users.filter((user) => state.reportUserIds.includes(user.id)).forEach((user) => {
@@ -1724,8 +1749,8 @@ function downloadReport() {
     const salesInspections = filteredEvents.filter((event) => event.type === "inspection" && event.salesman.includes(user.id));
     rows.push([
       userName(user),
-      inspectionsSet.length,
       nextWeek.length,
+      inspectionsSet.length,
       salesInspections.length,
       ...eventTypes.inspection.results.map((result) => salesInspections.filter((event) => event.inspectionResults.includes(result)).length),
     ]);
