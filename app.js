@@ -26,6 +26,7 @@ const state = {
   page: "calendar",
   viewMode: "month",
   hourHeight: 64,
+  mineOnly: false,
   viewDate: startOfMonth(new Date()),
   selectedEventId: null,
   previewEventId: null,
@@ -35,6 +36,8 @@ const state = {
   addressSuggestions: [],
   userGroupOpen: {},
   draftEventIds: [],
+  gridZoomStartDistance: 0,
+  gridZoomStartHourHeight: 64,
   users: [],
   currentUserId: "",
   currentUserRole: "rep",
@@ -169,11 +172,15 @@ function eventRow(event) {
 }
 
 async function saveEvents() {
-  if (!state.currentUserId) return;
+  if (!state.currentUserId) return false;
   const rows = state.events.filter((event) => !state.draftEventIds.includes(event.id)).map(eventRow);
-  if (!rows.length) return;
+  if (!rows.length) return true;
   const { error } = await db.from("calendar_events").upsert(rows, { onConflict: "id" });
-  if (error) toast("Event could not sync.");
+  if (error) {
+    toast("Event could not sync.");
+    return false;
+  }
+  return true;
 }
 
 function startOfMonth(date) {
@@ -374,7 +381,7 @@ function appHtml() {
       </header>
       ${state.page === "calendar" ? calendarPageHtml() : state.page === "admin" ? adminPageHtml() : reportsPageHtml()}
       ${state.page === "calendar" ? `<button class="fab" title="Create event" data-action="create" data-date="${toDateInputValue(new Date())}">+</button>` : ""}
-      ${state.page === "calendar" && state.viewMode !== "month" ? `<button class="height-fab" title="Adjust hour height" data-action="hour-height">↕</button>` : ""}
+      ${state.page === "calendar" ? `<button class="me-fab ${state.mineOnly ? "active" : ""}" title="Show my events" data-action="toggle-me">Me</button>` : ""}
     </main>
     ${drawerHtml()}
     ${previewHtml()}
@@ -511,7 +518,13 @@ function eventsForDate(dateKey) {
   return state.events
     .filter((event) => event.date === dateKey)
     .filter((event) => !state.draftEventIds.includes(event.id))
+    .filter((event) => !state.mineOnly || eventBelongsToCurrentUser(event))
     .sort((a, b) => eventStart(a).localeCompare(eventStart(b)));
+}
+
+function eventBelongsToCurrentUser(event) {
+  if (!state.currentUserId) return false;
+  return event.setter.includes(state.currentUserId) || event.salesman.includes(state.currentUserId);
 }
 
 function eventRowsHtml(events, timed = false) {
@@ -987,6 +1000,7 @@ function bind() {
   document.querySelectorAll("[data-action]").forEach((element) => {
     element.addEventListener("click", handleAction);
   });
+  bindGridZoom();
   document.getElementById("addressSuggestions")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-action='select-address']");
     if (!button) return;
@@ -1045,7 +1059,7 @@ function handleAction(event) {
   if (action === "navigate-preview") return navigateEvent(event.currentTarget.dataset.id);
   if (action === "spawn-adjuster") return spawnEvent("adjuster");
   if (action === "spawn-followup") return spawnEvent("followup");
-  if (action === "hour-height") return toggleHourHeight();
+  if (action === "toggle-me") return toggleMineOnly();
   if (action === "toggle-user-group") return toggleUserGroup(event.currentTarget.dataset.group);
   if (action === "toggle-report-detail") return toggleReportDetail(event.currentTarget.dataset.id);
   if (action === "delete-user") return deleteUser(event.currentTarget.dataset.id);
@@ -1053,6 +1067,52 @@ function handleAction(event) {
   if (action === "make-admin") return updateUserRole(event.currentTarget.dataset.id, "admin");
   if (action === "make-rep") return updateUserRole(event.currentTarget.dataset.id, "rep");
   if (action === "set-time-slot") return setTimeSlot(event);
+}
+
+function bindGridZoom() {
+  const grid = document.querySelector(".time-grid");
+  if (!grid) return;
+
+  grid.addEventListener("wheel", handleGridWheelZoom, { passive: false });
+  grid.addEventListener("touchstart", handleGridTouchStart, { passive: true });
+  grid.addEventListener("touchmove", handleGridTouchMove, { passive: false });
+  grid.addEventListener("touchend", handleGridTouchEnd, { passive: true });
+}
+
+function handleGridWheelZoom(event) {
+  if (!event.ctrlKey) return;
+  event.preventDefault();
+  const direction = event.deltaY < 0 ? 1 : -1;
+  setHourHeight(state.hourHeight + direction * 8);
+}
+
+function handleGridTouchStart(event) {
+  if (event.touches.length !== 2) return;
+  state.gridZoomStartDistance = touchDistance(event.touches);
+  state.gridZoomStartHourHeight = state.hourHeight;
+}
+
+function handleGridTouchMove(event) {
+  if (event.touches.length !== 2 || !state.gridZoomStartDistance) return;
+  event.preventDefault();
+  const scale = touchDistance(event.touches) / state.gridZoomStartDistance;
+  setHourHeight(state.gridZoomStartHourHeight * scale);
+}
+
+function handleGridTouchEnd(event) {
+  if (event.touches.length >= 2) return;
+  state.gridZoomStartDistance = 0;
+  state.gridZoomStartHourHeight = state.hourHeight;
+}
+
+function touchDistance(touches) {
+  const [first, second] = touches;
+  return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+}
+
+function setHourHeight(value) {
+  state.hourHeight = Math.max(48, Math.min(160, Math.round(value)));
+  document.querySelector(".time-grid")?.style.setProperty("--hour-height", `${state.hourHeight}px`);
 }
 
 async function login() {
@@ -1130,13 +1190,10 @@ async function createUser() {
     return;
   }
   if (state.currentUserId) {
-    const newUser = profileFromRow(profile);
-    state.users.push(newUser);
-    state.reportUserIds.push(newUser.id);
     closeCreateUser();
     form.reset();
     state.pendingToast = "User created.";
-    render();
+    await loadAppData();
     return;
   }
 
@@ -1242,6 +1299,12 @@ function closePreview() {
 
 function toggleDrawerSize() {
   state.drawerCollapsed = !state.drawerCollapsed;
+  render();
+}
+
+function toggleMineOnly() {
+  state.mineOnly = !state.mineOnly;
+  state.pendingToast = state.mineOnly ? "Showing my events." : "Showing all events.";
   render();
 }
 
@@ -1366,18 +1429,18 @@ function validateCurrentEvent() {
     toast("Select a real address from the dropdown before saving.");
     return null;
   }
-  saveEvents();
   return event;
 }
 
-function saveCurrentEvent() {
+async function saveCurrentEvent() {
   const event = validateCurrentEvent();
   if (!event) return;
   state.draftEventIds = state.draftEventIds.filter((id) => id !== event.id);
-  saveEvents();
+  const synced = await saveEvents();
+  if (!synced) return;
   state.selectedEventId = null;
   state.pendingToast = "Event saved.";
-  render();
+  await loadAppData();
 }
 
 async function deleteUser(userId) {
@@ -1472,11 +1535,6 @@ function navigateAddress(event) {
     return;
   }
   window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.address)}`;
-}
-
-function toggleHourHeight() {
-  state.hourHeight = state.hourHeight === 64 ? 96 : state.hourHeight === 96 ? 128 : 64;
-  render();
 }
 
 async function searchAddress(event) {
