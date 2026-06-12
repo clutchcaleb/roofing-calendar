@@ -369,8 +369,7 @@ function appHtml() {
           ${isAdmin() ? `<button class="tab ${state.page === "admin" ? "active" : ""}" data-action="page" data-page="admin" data-short="A">Admin</button>` : ""}
         </nav>
         ${state.page === "calendar" ? calendarToolbarHtml() : ""}
-        <div class="toolbar-spacer"></div>
-        ${state.page === "reports" && isAdmin() ? `<button class="secondary-btn" data-action="page" data-page="admin">Admin</button>` : ""}
+        ${state.page === "calendar" ? "" : `<div class="toolbar-spacer"></div>`}
         ${(state.page === "reports" || state.page === "admin") ? `<button class="secondary-btn" data-action="logout">Logout</button>` : ""}
       </header>
       ${state.page === "calendar" ? calendarPageHtml() : state.page === "admin" ? adminPageHtml() : reportsPageHtml()}

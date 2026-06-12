@@ -148,6 +148,10 @@ button {
   white-space: nowrap;
 }
 
+.view-switch {
+  margin-left: auto;
+}
+
 .toolbar-spacer {
   flex: 1;
 }
@@ -991,6 +995,7 @@ textarea {
 
 .mobile-view-cycle {
   display: none;
+  margin-left: auto;
   min-height: 40px;
   border-radius: 20px;
   padding: 0 16px;
@@ -1012,10 +1017,7 @@ textarea {
   }
 
   .current-label {
-    width: auto;
-    min-width: 0;
-    font-size: 14px;
-    white-space: nowrap;
+    display: none;
   }
 
   .toolbar-spacer {
